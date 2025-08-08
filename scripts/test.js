@@ -1,3 +1,12 @@
-const base = Process.getModuleByName('DreadHungerServer-Win64-Shipping.exe').base
-const msg = INJECTABLE_MESSAGE ?? 'no message injected.'
-console.log(msg)
+const configs = {
+  msg: "default message",
+};
+
+rpc.exports = {
+  setValue(key, value) {
+    console.log(`set ${key} to ${value}`);
+    configs[key] = value;
+  },
+};
+
+setTimeout(() => console.log(configs.msg), 1000);

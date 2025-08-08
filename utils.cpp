@@ -3,14 +3,15 @@
 namespace fs = std::filesystem;
 
 // script_query(filename || filename?NAME1=VAR1?NAME2=VAR2...)
-std::unordered_map<std::string, std::string> load_scripts(
+std::unordered_map<std::string, JsFileData> load_scripts(
 	const std::vector<std::string>& script_queries,
 	const std::string& dir)
 {
-	std::unordered_map<std::string, std::string> scripts;
+	std::unordered_map<std::string, JsFileData> ret;
 
 	for (const auto& query : script_queries)
 	{
+		JsFileData data;
 		// parse query
 		auto qpos = query.find('?');
 		auto filename = query.substr(0, qpos);
@@ -26,9 +27,9 @@ std::unordered_map<std::string, std::string> load_scripts(
 
 		std::ostringstream buf;
 		buf << ifs.rdbuf();
-		auto content = buf.str();
+		data.body = buf.str();
 
-		// replace必要なら置き換え実行する
+		// 変数設定されてたら何かいい感じにパースする
 		while (qpos != std::string::npos)
 		{
 			auto next = query.find('?', qpos + 1);
@@ -38,23 +39,15 @@ std::unordered_map<std::string, std::string> load_scripts(
 			{
 				auto key = pair.substr(0, eq);
 				auto val = pair.substr(eq + 1);
-
-				// replace
-				size_t pos = 0;
-				while ((pos = content.find(key, pos)) != std::string::npos)
-				{
-					content.replace(pos, key.length(), val);
-
-					// あんま無いけどKEY=KEYみたいな文字列を投げられた時スタックしないようにする
-					pos += val.length();
-				}
+				
+				data.variables[key] = val;
 			}
 			qpos = next;
 		}
-		scripts[filename] = content;
+		ret[filename] = data;
 	}
 
-	return scripts;
+	return ret;
 }
 
 const std::string LOG_DIR = "log";

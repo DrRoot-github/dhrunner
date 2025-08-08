@@ -44,3 +44,4 @@ frida/**
 out
 release
 .vs
+build

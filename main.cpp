@@ -1,6 +1,7 @@
 #include <iostream>
 #include <string>
 #include <ostream>
+#include <cstdio>
 
 
 #include "frida/frida-core.h"
@@ -85,6 +86,8 @@ int main(int argc, char* argv[])
 {
 	// parse args
 	std::vector<std::string> script_queries;
+
+	// あとでfreeする用
 	std::vector<FridaScript*> scriptList;
 
 #ifdef NDEBUG
@@ -109,7 +112,7 @@ int main(int argc, char* argv[])
 #else
 	std::string program_path = "E:/SteamLibrary/steamapps/common/Dread Hunger/WindowsServer/DreadHunger/Binaries/Win64/DreadHungerServer-Win64-Shipping.exe";
 	std::string game_option = "Expanse_Persistent?maxplayers=1?daysbeforeblizzard=7?dayminutes=16?predatordamage=0.25?coldintensity=0.25?hungerrate=0.25?coalburnrate=0.1?thralls=1";
-	script_queries.emplace_back("test.js?INJECTABLE_MESSAGE='injected!'");
+	script_queries.emplace_back("test.js?msg='injected!'");
 	script_queries.emplace_back("consolePipe.js");
 #endif
 
@@ -159,8 +162,7 @@ int main(int argc, char* argv[])
 	// g_signal_connect(local_device, "output", G_CALLBACK(on_output), NULL);
 
 	// attach device and session
-	FridaSession* session;
-	session = frida_device_attach_sync(local_device, pid, NULL, NULL, &error);
+	auto session = frida_device_attach_sync(local_device, pid, NULL, NULL, &error);
 	if (error != NULL)
 	{
 		g_print("Failed to attach: %s\n", error->message);
@@ -170,16 +172,27 @@ int main(int argc, char* argv[])
 	g_signal_connect(session, "detached", G_CALLBACK(on_detached), NULL);
 
 	// inject script
+	int msgId = 1;
 	for (const auto& [name, js] : scripts)
 	{
 		auto script = frida_session_create_script_sync(
-			session, js.c_str(), NULL, NULL, &error);
+			session, js.body.c_str(), NULL, NULL, &error);
 		g_assert(error == NULL);
 		g_signal_connect(script, "message", G_CALLBACK(on_message), NULL);
 		frida_script_load_sync(script, NULL, &error);
 		g_assert(error == NULL);
 		g_print("injected: %s\n", name.c_str());
 		scriptList.push_back(script);
+
+		// 変数を反映
+		for (auto& [k, v] : js.variables) {
+			// https://github.com/frida/frida-core/issues/296
+			char buf[1024];
+			std::snprintf(buf, sizeof(buf),
+				"[\"frida:rpc\", %d, \"call\", \"setValue\",[\"%s\", \"%s\"]]",
+				msgId++, k.c_str(), std::any_cast<std::string>(v).c_str());
+			frida_script_post(script, buf, nullptr);
+		}
 	}
 
 	frida_device_resume_sync(local_device, pid, NULL, &error);

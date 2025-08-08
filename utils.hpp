@@ -12,8 +12,14 @@
 #include <algorithm>
 #include <windows.h>
 #include <tlhelp32.h>
+#include <any>
 
-std::unordered_map<std::string, std::string> load_scripts(
+struct JsFileData {
+    std::string body;
+    std::unordered_map<std::string, std::any> variables;
+};
+
+std::unordered_map<std::string, JsFileData> load_scripts(
     const std::vector<std::string> &script_queries,
     const std::string &dir="scripts");
 
