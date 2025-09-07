@@ -2,6 +2,16 @@
 
 namespace fs = std::filesystem;
 
+// exeがある絶対パスを返す
+std::string exeDir() {
+	char path[MAX_PATH];
+	GetModuleFileNameA(NULL, path, MAX_PATH);
+	std::string full(path);
+	size_t pos = full.find_last_of("\\/");
+	return full.substr(0, pos);
+}
+
+// dirとscript_queryからscript bodyとか返す
 // script_query(filename || filename?NAME1=VAR1?NAME2=VAR2...)
 std::unordered_map<std::string, JsFileData> load_scripts(
 	const std::vector<std::string>& script_queries,

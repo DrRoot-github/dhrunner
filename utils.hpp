@@ -33,3 +33,5 @@ void trim_old_logs();
 // 絶対子供殺すマン
 bool assign_relationship(DWORD pid);
 void cleanupHandle();
+
+std::string exeDir();

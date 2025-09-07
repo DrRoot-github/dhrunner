@@ -10,6 +10,13 @@
 static GMainLoop* loop = NULL;
 guint pid = 0;
 static FridaDevice* local_device = NULL;
+static FridaSession* session = NULL;
+std::vector<FridaScript*> scriptList;
+int msgId = 0;
+
+// cwdが違うだけでスクリプト探せなくなるのでexeの位置から参照する
+auto scriptPath = exeDir() + "/scripts";
+
 
 // callbacks
 static gboolean stop(gpointer user_data)
@@ -25,7 +32,8 @@ static void on_signal(int signo)
 	g_idle_add(stop, NULL);
 }
 
-static void on_detached(FridaSession* session,
+static void on_detached(
+	FridaSession* _session,
 	FridaSessionDetachReason reason,
 	FridaCrash* crash,
 	gpointer user_data)
@@ -81,14 +89,76 @@ static void on_output(FridaDevice* sender, guint pid, gint fd,
 	fflush(stdout);
 }
 
+static void injectScript(
+	std::string scriptName,
+	std::string scriptBody,
+	std::unordered_map<std::string, std::any>  options) {
+
+	GError* error = NULL;
+	auto script = frida_session_create_script_sync(
+		session, scriptBody.c_str(), NULL, NULL, &error);
+	g_assert(error == NULL);
+	g_signal_connect(script, "message", G_CALLBACK(on_message), NULL);
+	frida_script_load_sync(script, NULL, &error);
+	g_assert(error == NULL);
+	g_print("injected: %s\n", scriptName.c_str());
+	scriptList.push_back(script);
+
+	// 変数を反映
+	for (auto& [k, v] : options) {
+		// https://github.com/frida/frida-core/issues/296
+		char buf[1024];
+		std::snprintf(buf, sizeof(buf),
+			"[\"frida:rpc\", %d, \"call\", \"setValue\",[\"%s\", \"%s\"]]",
+			msgId++, k.c_str(), std::any_cast<std::string>(v).c_str());
+		frida_script_post(script, buf, nullptr);
+	}
+}
+
+// stdin受ける
+static gboolean stdin_cb(GIOChannel* source, GIOCondition condition, gpointer data) {
+	if (condition & (G_IO_HUP | G_IO_ERR)) {
+		return FALSE;
+	}
+
+	gchar* line = NULL;
+	gsize len = 0;
+	GError* err = NULL;
+
+	// ややこしいのでエンコード切る
+	g_io_channel_set_encoding(source, NULL, NULL);
+	GIOStatus status = g_io_channel_read_line(source, &line, &len, NULL, &err);
+	if (status == G_IO_STATUS_NORMAL && line != NULL) {
+		// 改行を消す
+		g_strstrip(line);
+
+		// lineはscript_queryと同仕様 filename.js ないし filename.js?key=value?key2=val2
+		std::vector query = { std::string(line) };
+		auto jsmap = load_scripts(query, scriptPath);
+
+		for (const auto& [fname, js] : jsmap) {
+			injectScript(fname, js.body, js.variables);
+		}
+
+		g_print("--- STDIN: %s\n", line);
+		g_free(line);
+	}
+	else if (err) {
+		g_warning("--- STDIN ERROR OCCURED: %s", err->message);
+		g_error_free(err);
+	}
+
+	// TRUE返すと監視を継続
+	return TRUE;
+}
+
 // ------------------ main ----------------
 int main(int argc, char* argv[])
 {
+
 	// parse args
 	std::vector<std::string> script_queries;
 
-	// あとでfreeする用
-	std::vector<FridaScript*> scriptList;
 
 #ifdef NDEBUG
 	// argv[0]...runner.exe
@@ -108,22 +178,30 @@ int main(int argc, char* argv[])
 		// script_file_name
 		// script_file_name?REPLACE_VARIABLE=VALUE
 		script_queries.emplace_back(argv[i]);
+
+		//std::cout << i << ":" << argv[i] << std::endl;
 	}
 #else
 	std::string program_path = "E:/SteamLibrary/steamapps/common/Dread Hunger/WindowsServer/DreadHunger/Binaries/Win64/DreadHungerServer-Win64-Shipping.exe";
 	std::string game_option = "Expanse_Persistent?maxplayers=1?daysbeforeblizzard=7?dayminutes=16?predatordamage=0.25?coldintensity=0.25?hungerrate=0.25?coalburnrate=0.1?thralls=1";
-	script_queries.emplace_back("test.js?msg='injected!'");
+	script_queries.emplace_back("test.js?msg=インジェクトできたぽよなあ");
 	script_queries.emplace_back("consolePipe.js");
 #endif
 
 	// setup
 	frida_init();
+
 	loop = g_main_loop_new(NULL, TRUE);
 
 	signal(SIGINT, on_signal);
 	signal(SIGTERM, on_signal);
 
-	auto scripts = load_scripts(script_queries);
+	// stdinで後から注入もできるようにする
+	GIOChannel* stdin_channel = g_io_channel_unix_new(fileno(stdin));
+	g_io_add_watch(stdin_channel, G_IO_IN, stdin_cb, NULL);
+
+	// std::cout << "script basePath set to " << basePath << "\n";
+	auto scripts = load_scripts(script_queries, scriptPath);
 	GError* error = NULL;
 	auto manager = frida_device_manager_new();
 	local_device = frida_device_manager_get_device_by_type_sync(
@@ -144,7 +222,7 @@ int main(int argc, char* argv[])
 	while (launch_argv[len] != NULL)
 		len++;
 	frida_spawn_options_set_argv(spawn, launch_argv, len);
-	// frida_spawn_options_set_stdio(spawn, FridaStdio::FRIDA_STDIO_PIPE);
+	frida_spawn_options_set_stdio(spawn, FridaStdio::FRIDA_STDIO_PIPE);
 
 	pid = frida_device_spawn_sync(
 		local_device, program_path.c_str(), spawn, NULL, &error);
@@ -162,7 +240,7 @@ int main(int argc, char* argv[])
 	// g_signal_connect(local_device, "output", G_CALLBACK(on_output), NULL);
 
 	// attach device and session
-	auto session = frida_device_attach_sync(local_device, pid, NULL, NULL, &error);
+	session = frida_device_attach_sync(local_device, pid, NULL, NULL, &error);
 	if (error != NULL)
 	{
 		g_print("Failed to attach: %s\n", error->message);
@@ -171,31 +249,13 @@ int main(int argc, char* argv[])
 	}
 	g_signal_connect(session, "detached", G_CALLBACK(on_detached), NULL);
 
-	// inject script
-	int msgId = 1;
 	for (const auto& [name, js] : scripts)
 	{
-		auto script = frida_session_create_script_sync(
-			session, js.body.c_str(), NULL, NULL, &error);
-		g_assert(error == NULL);
-		g_signal_connect(script, "message", G_CALLBACK(on_message), NULL);
-		frida_script_load_sync(script, NULL, &error);
-		g_assert(error == NULL);
-		g_print("injected: %s\n", name.c_str());
-		scriptList.push_back(script);
-
-		// 変数を反映
-		for (auto& [k, v] : js.variables) {
-			// https://github.com/frida/frida-core/issues/296
-			char buf[1024];
-			std::snprintf(buf, sizeof(buf),
-				"[\"frida:rpc\", %d, \"call\", \"setValue\",[\"%s\", \"%s\"]]",
-				msgId++, k.c_str(), std::any_cast<std::string>(v).c_str());
-			frida_script_post(script, buf, nullptr);
-		}
+		injectScript(name, js.body, js.variables);
 	}
 
 	frida_device_resume_sync(local_device, pid, NULL, &error);
+
 	if (g_main_loop_is_running(loop))
 	{
 		g_main_loop_run(loop);

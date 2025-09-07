@@ -30,9 +30,6 @@ spell arrange(index)
 ----0----
 */
 
-//spellManager
-const adhspellManagerSetEquippedSpellsAddr = base.add(0xe81f00);
-
 const udhGameInstanceGetInstance = new NativeFunction(
   base.add(0xd93240),
   "pointer",
@@ -48,13 +45,19 @@ function getArrayItemAddr(tArray, size, index) {
   return tArray.readPointer().add(index * size);
 }
 
-// Interceptor内でallocするとaccess violationで死ぬ
+// ADH_SpellManager_SetEquippedSpells内でallocするとaccess violationで死ぬ
 const spellList = Memory.alloc(0x100);
 spellList.writePointer(spellList.add(16));
-Interceptor.attach(adhspellManagerSetEquippedSpellsAddr, {
+
+// ADH_SpellManager_SetEquippedSpells
+Interceptor.attach(base.add(0xe81f00), {
   onEnter: (args) => {
-    // spellList:TArray<TotemSpell>
-    spellList.add(12).writeU32(configs.spellList.length);
+    // spellList:TArray<TotemSpell>:0xc int ArrayMax
+    spellList.add(0xc).writeU32(configs.spellList.length);
+
+    // TArray<TotemSpell>:0x8 int ArrayNum
+    spellList.add(8).writeU32(configs.spellList.length);
+
     const spellManager = args[0];
 
     // spellManager:0x228 int MaxSpells
@@ -62,7 +65,6 @@ Interceptor.attach(adhspellManagerSetEquippedSpellsAddr, {
     const GameInstance = udhGameInstanceGetInstance(spellManager);
     const ThrallSpells = GameInstance.add(0x440);
 
-    spellList.add(8).writeU32(configs.spellList.length);
     for (let i = 0; i < configs.spellList.length; i++) {
       const spellType = getArrayItemAddr(ThrallSpells, 8, configs.spellList[i]);
       spellList.add(16 + 8 * i).writePointer(spellType.readPointer());
