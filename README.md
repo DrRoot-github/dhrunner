@@ -43,7 +43,17 @@ will load patch.js and inject it with REPLACE_STRING replaced by 'replaced!'.
 もし変数の置き換えが必要ない場合は、単に`patch.js`だけで良い。\
 If no variable replacement is needed, simply passing patch.js is enough.
 
+実行後も入力を受け付けてるので、script 名を渡すと即時実行される。
+
 ## script list
+
+### additional_roles.js
+
+日本で人気の狂人船。
+
+### close_inventory.js
+
+即時実行するとインタラクトが解除される。
 
 ### consolePipe.js
 
