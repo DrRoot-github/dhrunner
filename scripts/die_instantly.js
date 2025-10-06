@@ -1,24 +1,29 @@
 // ダウン時に即死
 
-const base = Process.getModuleByName('DreadHungerServer-Win64-Shipping.exe').base
+const base = Module.findBaseAddress(
+	'DreadHungerServer-Win64-Shipping.exe'
+);
 const setCurrentHealth = new NativeFunction(
-  base.add(0xd6e620), "void", ["pointer", "float"]
-)
+	base.add(0xd6e620),
+	'void',
+	['pointer', 'float']
+);
 const ADH_HumanCharacter_TakeDamage = new NativeFunction(
-  base.add(0xD73DB0),
-  "float",
-  ["pointer", "float", "pointer", "pointer", "pointer"])
+	base.add(0xd73db0),
+	'float',
+	['pointer', 'float', 'pointer', 'pointer', 'pointer']
+);
 
-  Interceptor.attach(ADH_HumanCharacter_TakeDamage, {
-  onEnter(args) {
-    this.self = args[0]
-  },
+Interceptor.attach(ADH_HumanCharacter_TakeDamage, {
+	onEnter(args) {
+		this.self = args[0];
+	},
 
-  onLeave() {
-    const incapacitated = this.self.add(0xe10).readU8()
-    console.log(incapacitated)
-    if (incapacitated) {
-      setCurrentHealth(this.self, 0)
-    }
-  }
-})
+	onLeave() {
+		const incapacitated = this.self.add(0xe10).readU8();
+		// console.log(incapacitated);
+		if (incapacitated) {
+			setCurrentHealth(this.self, 0);
+		}
+	}
+});

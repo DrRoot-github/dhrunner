@@ -13,48 +13,73 @@ std::string exeDir() {
 
 // dirとscript_queryからscript bodyとか返す
 // script_query(filename || filename?NAME1=VAR1?NAME2=VAR2...)
-std::unordered_map<std::string, JsFileData> load_scripts(
+std::unordered_map<std::string, JsResource> load_scripts(
 	const std::vector<std::string>& script_queries,
 	const std::string& dir)
 {
-	std::unordered_map<std::string, JsFileData> ret;
+	std::unordered_map<std::string, JsResource> ret;
 
 	for (const auto& query : script_queries)
 	{
-		JsFileData data;
 		// parse query
 		auto qpos = query.find('?');
 		auto filename = query.substr(0, qpos);
 
 		// load file
 		auto fullpath = std::filesystem::path(dir) / filename;
-		std::ifstream ifs(fullpath);
-		if (!ifs)
-		{
-			std::cerr << "could not open file:" << filename << std::endl;
-			continue;
-		}
+		// std::ifstream ifs(fullpath);
 
-		std::ostringstream buf;
-		buf << ifs.rdbuf();
-		data.body = buf.str();
 
-		// 変数設定されてたら何かいい感じにパースする
-		while (qpos != std::string::npos)
-		{
-			auto next = query.find('?', qpos + 1);
-			auto pair = query.substr(qpos + 1, next - qpos - 1);
-			auto eq = pair.find('=');
-			if (eq != std::string::npos)
+		// 拡張子がqjs（俺が今決めた）だったらバイトコードとして読む
+		if (fs::path(filename).extension() == ".qjs") {
+			QJSByteCodeData data;
+			std::ifstream ifs(fullpath, std::ios::binary);
+			if (!ifs)
 			{
-				auto key = pair.substr(0, eq);
-				auto val = pair.substr(eq + 1);
-				
-				data.variables[key] = val;
+				std::cerr << "could not open file:" << filename << std::endl;
+				continue;
 			}
-			qpos = next;
+			ifs.seekg(0, std::ios::end);
+			std::streamsize size = ifs.tellg();
+			ifs.seekg(0, std::ios::beg);
+			std::vector<uint8_t> buf(size);
+			if (size > 0) {
+				ifs.read(reinterpret_cast<char*>(buf.data()), size);
+			}
+			data.body = buf;
+			ret[filename] = data;
+
 		}
-		ret[filename] = data;
+		else {
+			JsFileData data;
+			std::ifstream ifs(fullpath);
+			if (!ifs)
+			{
+				std::cerr << "could not open file:" << filename << std::endl;
+				continue;
+			}
+
+			std::ostringstream buf;
+			buf << ifs.rdbuf();
+			data.body = buf.str();
+
+			// 変数設定されてたら何かいい感じにパースする
+			while (qpos != std::string::npos)
+			{
+				auto next = query.find('?', qpos + 1);
+				auto pair = query.substr(qpos + 1, next - qpos - 1);
+				auto eq = pair.find('=');
+				if (eq != std::string::npos)
+				{
+					auto key = pair.substr(0, eq);
+					auto val = pair.substr(eq + 1);
+
+					data.variables[key] = val;
+				}
+				qpos = next;
+			}
+			ret[filename] = data;
+		}
 	}
 
 	return ret;

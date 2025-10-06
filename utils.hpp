@@ -13,15 +13,23 @@
 #include <windows.h>
 #include <tlhelp32.h>
 #include <any>
+#include <variant>
 
 struct JsFileData {
-    std::string body;
-    std::unordered_map<std::string, std::any> variables;
+	std::string body;
+	std::unordered_map<std::string, std::any> variables;
 };
 
-std::unordered_map<std::string, JsFileData> load_scripts(
-    const std::vector<std::string> &script_queries,
-    const std::string &dir="scripts");
+struct QJSByteCodeData {
+	std::vector<uint8_t> body;
+};
+
+using JsResource = std::variant<JsFileData, QJSByteCodeData>;
+
+std::unordered_map<std::string, JsResource> load_scripts(
+	const std::vector<std::string>& script_queries,
+	const std::string& dir = "scripts"
+);
 
 
 // logファイル吐くやつ作るだけ作ったけど微妙だったから使わなかった

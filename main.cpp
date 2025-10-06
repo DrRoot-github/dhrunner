@@ -91,28 +91,41 @@ static void on_output(FridaDevice* sender, guint pid, gint fd,
 
 static void injectScript(
 	std::string scriptName,
-	std::string scriptBody,
-	std::unordered_map<std::string, std::any>  options) {
+	JsResource scriptBody) {
 
 	GError* error = NULL;
-	auto script = frida_session_create_script_sync(
-		session, scriptBody.c_str(), NULL, NULL, &error);
+	FridaScript* script;
+
+	if (auto* res = std::get_if<QJSByteCodeData>(&scriptBody)) {
+		GBytes* bytes = g_bytes_new(res->body.data(), res->body.size());
+		script = frida_session_create_script_from_bytes_sync(
+			session, bytes, NULL, NULL, &error
+		);
+		g_bytes_unref(bytes);
+	}
+	else if (auto* res = std::get_if<JsFileData>(&scriptBody)) {
+		script = frida_session_create_script_sync(
+			session, res->body.c_str(), NULL, NULL, &error);
+
+		// 変数を反映
+		for (auto& [k, v] : res->variables) {
+			// https://github.com/frida/frida-core/issues/296
+			char buf[1024];
+			std::snprintf(buf, sizeof(buf),
+				"[\"frida:rpc\", %d, \"call\", \"setValue\",[\"%s\", \"%s\"]]",
+				msgId++, k.c_str(), std::any_cast<std::string>(v).c_str());
+			frida_script_post(script, buf, nullptr);
+		}
+	}
+
 	g_assert(error == NULL);
 	g_signal_connect(script, "message", G_CALLBACK(on_message), NULL);
 	frida_script_load_sync(script, NULL, &error);
+	
 	g_assert(error == NULL);
 	g_print("injected: %s\n", scriptName.c_str());
 	scriptList.push_back(script);
 
-	// 変数を反映
-	for (auto& [k, v] : options) {
-		// https://github.com/frida/frida-core/issues/296
-		char buf[1024];
-		std::snprintf(buf, sizeof(buf),
-			"[\"frida:rpc\", %d, \"call\", \"setValue\",[\"%s\", \"%s\"]]",
-			msgId++, k.c_str(), std::any_cast<std::string>(v).c_str());
-		frida_script_post(script, buf, nullptr);
-	}
 }
 
 // stdin受ける
@@ -137,7 +150,7 @@ static gboolean stdin_cb(GIOChannel* source, GIOCondition condition, gpointer da
 		auto jsmap = load_scripts(query, scriptPath);
 
 		for (const auto& [fname, js] : jsmap) {
-			injectScript(fname, js.body, js.variables);
+			injectScript(fname, js);
 		}
 
 		g_print("--- STDIN: %s\n", line);
@@ -184,8 +197,10 @@ int main(int argc, char* argv[])
 #else
 	std::string program_path = "E:/SteamLibrary/steamapps/common/Dread Hunger/WindowsServer/DreadHunger/Binaries/Win64/DreadHungerServer-Win64-Shipping.exe";
 	std::string game_option = "Expanse_Persistent?maxplayers=1?daysbeforeblizzard=7?dayminutes=16?predatordamage=0.25?coldintensity=0.25?hungerrate=0.25?coalburnrate=0.1?thralls=1";
-	script_queries.emplace_back("test.js?msg=インジェクトできたぽよなあ");
-	script_queries.emplace_back("consolePipe.js");
+	//script_queries.emplace_back("test.js?msg=インジェクトできたぽよなあ");
+	//script_queries.emplace_back("consolePipe.js");
+	script_queries.emplace_back("fix_reconnect_compiled.qjs");
+	
 #endif
 
 	// setup
@@ -251,7 +266,7 @@ int main(int argc, char* argv[])
 
 	for (const auto& [name, js] : scripts)
 	{
-		injectScript(name, js.body, js.variables);
+		injectScript(name, js);
 	}
 
 	frida_device_resume_sync(local_device, pid, NULL, &error);

@@ -1,8 +1,8 @@
 // スペルクールタイム無し、マナ最小値Lv1、弾と注射減らない、マスケ即空き、クラフト0秒
 
-const base = Process.getModuleByName(
+const base = Module.findBaseAddress(
 	'DreadHungerServer-Win64-Shipping.exe'
-).base;
+);
 
 const adhHumanCharacterAddStartingInventoryAddr = base.add(0xd46f10);
 const adhSpellManagerCastSpellAddr = base.add(0xe634f0);

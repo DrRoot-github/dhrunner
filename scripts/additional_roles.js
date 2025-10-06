@@ -1,6 +1,6 @@
-const base = Process.getModuleByName(
+const base = Module.findBaseAddress(
 	'DreadHungerServer-Win64-Shipping.exe'
-).base;
+);
 
 const configs = {
 	/**
@@ -301,10 +301,6 @@ Interceptor.attach(base.add(0xd9d1b0), {
 				// 0x238 TArray<*APlayerState> PlayerArray
 			},
 			onLeave(retval) {
-				if (configs.test) {
-					console.log(`IsAnyExplorerAlive, player:${this.playerId}`);
-					console.log(JSON.stringify(playerData[this.playerId]));
-				}
 				if (playerData[this.playerId]?.additionalRole === 'mad') {
 					retval.replace(1);
 				}
@@ -379,57 +375,48 @@ Interceptor.attach(base.add(0xda16b8), {
 ////////////////// ----------------- utils ----------------- //////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-const FName_FName = new NativeFunction(base.add(0x1158f20), 'void', [
-	'pointer',
-	'pointer',
-	'int8'
-]);
-const FText_FromName = new NativeFunction(
-	base.add(0x1096370),
+function FStringToString(FString) {
+	const size = FString.add(0x8).readInt();
+	return FString.readPointer().readUtf16String(size);
+}
+
+/// ----------- send thrall message ----------
+// FText::FromString(FString &&)	00000000010963B0
+const FTextFromFString = new NativeFunction(
+	base.add(0x10964e0),
 	'pointer',
 	['pointer', 'pointer']
 );
-const ADH_PlayerController_ReceiveThrallMessage = new NativeFunction(
+
+// ADH_PlayerController::ReceiveThrallMessage(FText const &,USoundBase *)	0000000000EE7810
+const ReceiveThrallMessage = new NativeFunction(
 	base.add(0xee7810),
 	'void',
 	['pointer', 'pointer', 'pointer']
 );
 
-function getTArraySize(TArray) {
-	return TArray.add(8).readU32();
-}
+function sendThrallMessage(pController, message) {
+	// build FString
+	const utf16buf = Memory.alloc((message.length + 1) * 2);
+	utf16buf.writeUtf16String(message);
 
-function FStringToString(FString) {
-	const size = getTArraySize(FString);
-	return FString.readPointer().readUtf16String(size);
-}
+	// FString = TArray<wchar_t>だから個数は元の文字列の長さを入れる
+	const FStringBuffer = Memory.alloc(0x10);
+	FStringBuffer.writePointer(utf16buf);
+	FStringBuffer.add(0x8).writeInt(message.length);
+	FStringBuffer.add(0xc).writeInt(message.length);
 
-function newFName(Name) {
-	const FName_Buffer = Memory.alloc(8);
-	const buf = Memory.alloc((Name.length + 4) * 2);
-	buf.writeUtf16String('   ' + Name);
-	FName_FName(FName_Buffer, buf, 1);
-	return FName_Buffer;
-}
+	const FTextBuffer = Memory.alloc(0x8);
+	FTextFromFString(FTextBuffer, FStringBuffer);
 
-function FNameToFText(FName) {
-	const FText_Buffer = Memory.alloc(24);
-	FText_FromName(FText_Buffer, FName);
-	return FText_Buffer;
-}
-
-function _sendThrallMessage(PlayerController, Message, Usound) {
-	// console.log(PlayerController, Message, Usound);
-	const FName_Message = newFName(Message);
-	const FText_Message = FNameToFText(FName_Message);
-	ADH_PlayerController_ReceiveThrallMessage(
-		PlayerController,
-		FText_Message,
-		Usound
-	);
+	ReceiveThrallMessage(pController, FTextBuffer, ptr(0));
 }
 
 function sendMessages(playerController, messageOrMessageList) {
+	if (playerController.isNull()) {
+		console.log('sendThrallMessage: PlayerController is null');
+		return;
+	}
 	let count = 0;
 	let timer = null;
 
@@ -437,10 +424,10 @@ function sendMessages(playerController, messageOrMessageList) {
 		? messageOrMessageList
 		: [messageOrMessageList];
 
-	// 素直に正順でReceiveThrallMessageすると逆順に出る
+	// 素直に正順でReceiveThrallMessageすると下から出ちゃうので逆で出す
 	function _sendMessages() {
 		for (let i = messages.length - 1; i >= 0; i--) {
-			_sendThrallMessage(playerController, messages[i], ptr(0));
+			sendThrallMessage(playerController, messages[i]);
 		}
 		count++;
 		if (count == 5) {
