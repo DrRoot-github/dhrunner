@@ -149,16 +149,22 @@ Enables training mode.
 
 ## 自分で script を追加するには？ / How to Add Your Own Scripts
 
+~~
 このランチャーは frida ver17~を使っているので、`Module.findBaseAddress`が使えない。\
 もしスクリプトを追加したい場合は、\
 `Module.findBaseAddress('DreadHungerServer-Win64-Shipping.exe')`を`Process.getModuleByName('DreadHungerServer-Win64-Shipping.exe').base`に書き換えると動作する。
+~~
 
 あとは js ファイルを script ディレクトリに置き、コマンドラインからファイル名を渡せば良い。
 
+~~
 This launcher uses Frida version 17+, so `Module.findBaseAddress` is not available.\
 If you want to add a new script, replace
 `Module.findBaseAddress('DreadHungerServer-Win64-Shipping.exe')`
 with
 `Process.getModuleByName('DreadHungerServer-Win64-Shipping.exe').base`
+~~
 
 After that, place your .js file in the scripts directory and pass the file name via the command line.
+
+0.3で16系に戻した。
