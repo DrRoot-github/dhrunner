@@ -2,7 +2,8 @@
 #include <string>
 #include <ostream>
 #include <cstdio>
-
+#include <vector>
+#include <array>
 
 #include "frida/frida-core.h"
 #include "utils.hpp"
@@ -95,6 +96,7 @@ static void injectScript(
 
 	GError* error = NULL;
 	FridaScript* script;
+	std::vector<std::array<char,256>> buffers;
 
 	if (auto* res = std::get_if<QJSByteCodeData>(&scriptBody)) {
 		GBytes* bytes = g_bytes_new(res->body.data(), res->body.size());
@@ -110,17 +112,24 @@ static void injectScript(
 		// 変数を反映
 		for (auto& [k, v] : res->variables) {
 			// https://github.com/frida/frida-core/issues/296
-			char buf[1024];
-			std::snprintf(buf, sizeof(buf),
+			std::array<char, 256> buf = {};
+			std::snprintf(buf.data(),buf.size(),
 				"[\"frida:rpc\", %d, \"call\", \"setValue\",[\"%s\", \"%s\"]]",
 				msgId++, k.c_str(), std::any_cast<std::string>(v).c_str());
-			frida_script_post(script, buf, nullptr);
+			buffers.push_back(buf);
 		}
 	}
 
 	g_assert(error == NULL);
 	g_signal_connect(script, "message", G_CALLBACK(on_message), NULL);
 	frida_script_load_sync(script, NULL, &error);
+
+	
+	// frida17系だと、load前にpostmessageしてもexport叩けるんだけど、
+	// 16系以前だとどうも無理っぽいのでこのタイミングで叩く
+	for (const auto& buf : buffers) {
+		frida_script_post(script, buf.data(), NULL);
+	}
 	
 	g_assert(error == NULL);
 	g_print("injected: %s\n", scriptName.c_str());
@@ -197,9 +206,8 @@ int main(int argc, char* argv[])
 #else
 	std::string program_path = "E:/SteamLibrary/steamapps/common/Dread Hunger/WindowsServer/DreadHunger/Binaries/Win64/DreadHungerServer-Win64-Shipping.exe";
 	std::string game_option = "Expanse_Persistent?maxplayers=1?daysbeforeblizzard=7?dayminutes=16?predatordamage=0.25?coldintensity=0.25?hungerrate=0.25?coalburnrate=0.1?thralls=1";
-	//script_queries.emplace_back("test.js?msg=インジェクトできたぽよなあ");
+	script_queries.emplace_back("test.js?msg=success!");
 	//script_queries.emplace_back("consolePipe.js");
-	script_queries.emplace_back("fix_reconnect_compiled.qjs");
 	
 #endif
 
@@ -212,7 +220,7 @@ int main(int argc, char* argv[])
 	signal(SIGTERM, on_signal);
 
 	// stdinで後から注入もできるようにする
-	GIOChannel* stdin_channel = g_io_channel_unix_new(fileno(stdin));
+	GIOChannel* stdin_channel = g_io_channel_unix_new(_fileno(stdin));
 	g_io_add_watch(stdin_channel, G_IO_IN, stdin_cb, NULL);
 
 	// std::cout << "script basePath set to " << basePath << "\n";
