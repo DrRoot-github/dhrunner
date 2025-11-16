@@ -14,6 +14,11 @@ const configs = {
 	 */
 	messageInterval: 7.68,
 
+	/**
+	 * クルーリーダー有り 0なら無し
+	 */
+	leader: 1,
+
 	// test flag なんかあった時こまるし普段からONでいいなこれ
 	test: 1
 };
@@ -23,9 +28,6 @@ rpc.exports = {
 		console.log(`set ${key} to ${value}`);
 		const param = +value;
 		configs[key] = param;
-		if (!(configs.thrallsType === 0 || configs.thrallsType === 1)) {
-			console.error('[additional_roles.js] Invalid Param:', value);
-		}
 	}
 };
 
@@ -222,8 +224,11 @@ Interceptor.attach(ADH_GameMode_HandleMatchHasStarted, {
 			const j = Math.floor(Math.random() * (i + 1));
 			[crews[i], crews[j]] = [crews[j], crews[i]];
 		}
-		const roles = ['mad', 'leader'];
-		// const roles = ["leader"];
+		const roles = ['mad'];
+		if (configs.leader) {
+			roles.push("leader")
+		}
+
 		for (let i = 0; i < crews.length; i++) {
 			const role = roles.shift();
 			const targetPlayer = playerData[crews[i]];
@@ -315,24 +320,24 @@ Interceptor.attach(base.add(0xd9d1b0), {
 	}
 });
 
-// サーバー起動した瞬間と1日が変わった時に呼ばれる 何故かonLeaveが呼ばれない
-// その上thisに触れると例外になるのでGameStateを直接参照できない
-// void __fastcall ADH_GameState::OnNewDayStarted(ADH_GameState *this)
-Interceptor.attach(base.add(0xda16b8), {
-	onEnter() {
-		const ADH_GameState = UWorld_GetGameState(GWorld.readPointer());
-		const DaysUntilBlizzard = ADH_GameState.add(0x484).readU32();
+// サーバー起動した瞬間と1日が変わった時に呼ばれる
+// DA1680 ; void __fastcall ADH_GameState::OnNewDayStarted(ADH_GameState *this)
+Interceptor.attach(base.add(0xda1680), {
+	onEnter(args) {
+		this.self = args[0]
+	},
+	onLeave() {
+		const DaysUntilBlizzard = this.self.add(0x484).readU32();
 		if (DaysUntilBlizzard === 0) {
 			// leaderに役職をメッセージで投げる
-			const players = Object.values(playerData);
-			const leader = players.find(
+			const leader = playerData.find(
 				(x) => x.additionalRole === 'leader'
 			);
 			if (leader) {
 				const messages = [];
-				const mad = players.find((x) => x.additionalRole === 'mad');
-				const primary = players.find((x) => x.thrall === 'primary');
-				const secondary = players.find(
+				const mad = playerData.find((x) => x.additionalRole === 'mad');
+				const primary = playerData.find((x) => x.thrall === 'primary');
+				const secondary = playerData.find(
 					(x) => x.thrall === 'secondary'
 				);
 
@@ -414,20 +419,16 @@ function sendThrallMessage(pController, message) {
 /** @type {IntervalTask[]} */
 const tasks = [];
 
-// DAD420 ; void __fastcall ADH_GameState::Tick(ADH_GameState *this, float DeltaSeconds)
+let indexForTest = 0
+// DAD420; void __fastcall ADH_GameState:: Tick(ADH_GameState * this, float DeltaSeconds)
 Interceptor.attach(base.add(0xDAD420), {
 	onEnter(args) {
-		// console.log(`args[1]:${args[1]}\r`)
-		this.self = args[0]
-	},
-
-	onLeave() {
-		const totalTick = this.self.add(0x5b0).readDouble()
+		const totalTime = args[0].add(0x5b0).readDouble()
 
 		// いらんくなったタスク消去の為に逆順で列挙する
 		for (let i = tasks.length - 1; i >= 0; i--) {
 			const task = tasks[i]
-			if (task.nextFireTime < totalTick) {
+			if (task.nextFireTime < totalTime) {
 				task.callback()
 				task.remaining--
 
@@ -435,15 +436,16 @@ Interceptor.attach(base.add(0xDAD420), {
 					tasks.splice(i, 1)
 				}
 				else {
-					task.nextFireTime = totalTick + task.interval
+					task.nextFireTime = totalTime + task.interval
 				}
 			}
 		}
 	}
 })
 
+
 function sendMessageContinuously(playerController, message) {
-	/** @type {IntervalTask} */
+	// /** @type {IntervalTask} */
 	const task = {
 		callback: () => {
 			sendThrallMessage(playerController, message)
@@ -453,6 +455,7 @@ function sendMessageContinuously(playerController, message) {
 		nextFireTime: 0
 	}
 	tasks.push(task)
+	// sendThrallMessage(playerController, message)
 }
 
 function setSpells(ADH_PlayerController, spells) {
