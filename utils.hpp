@@ -15,25 +15,18 @@
 #include <any>
 #include <variant>
 
-struct JsFileData {
+struct JsFileData
+{
 	std::string body;
 	std::unordered_map<std::string, std::any> variables;
 };
 
-struct QJSByteCodeData {
-	std::vector<uint8_t> body;
-};
-
-using JsResource = std::variant<JsFileData, QJSByteCodeData>;
-
-std::unordered_map<std::string, JsResource> load_scripts(
-	const std::vector<std::string>& script_queries,
-	const std::string& dir = "scripts"
-);
-
+std::unordered_map<std::string, JsFileData> load_scripts(
+		const std::vector<std::string> &script_queries,
+		const std::string &dir = "scripts");
 
 // logファイル吐くやつ作るだけ作ったけど微妙だったから使わなかった
-void write_log(const char* message, std::string filename);
+void write_log(const char *message, std::string filename);
 void ensure_log_dir_exists();
 std::string get_log_filename();
 void trim_old_logs();
@@ -43,3 +36,6 @@ bool assign_relationship(DWORD pid);
 void cleanupHandle();
 
 std::string exeDir();
+
+std::string console_to_utf8(const std::string &input);
+std::string ansi_to_utf8(const std::string &input);

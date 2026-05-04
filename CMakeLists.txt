@@ -15,4 +15,4 @@ add_executable(runner main.cpp utils.cpp)
 
 # setupapiと/NODEFAULTLIBを追加しないとビルド通らない
 target_link_libraries(runner frida-core setupapi)
-add_link_options(/NODEFAULTLIB:libcmt.lib)
+target_link_options(runner PRIVATE "/NODEFAULTLIB:libcmt.lib" "/NODEFAULTLIB:libcmtd.lib")

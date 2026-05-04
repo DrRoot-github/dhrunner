@@ -3,7 +3,8 @@
 namespace fs = std::filesystem;
 
 // exeがある絶対パスを返す
-std::string exeDir() {
+std::string exeDir()
+{
 	char path[MAX_PATH];
 	GetModuleFileNameA(NULL, path, MAX_PATH);
 	std::string full(path);
@@ -13,73 +14,59 @@ std::string exeDir() {
 
 // dirとscript_queryからscript bodyとか返す
 // script_query(filename || filename?NAME1=VAR1?NAME2=VAR2...)
-std::unordered_map<std::string, JsResource> load_scripts(
-	const std::vector<std::string>& script_queries,
-	const std::string& dir)
+std::unordered_map<std::string, JsFileData> load_scripts(
+		const std::vector<std::string> &script_queries,
+		const std::string &dir)
 {
-	std::unordered_map<std::string, JsResource> ret;
+	std::unordered_map<std::string, JsFileData> ret;
 
-	for (const auto& query : script_queries)
+	for (const auto &query : script_queries)
 	{
 		// parse query
 		auto qpos = query.find('?');
 		auto filename = query.substr(0, qpos);
 
 		// load file
-		auto fullpath = std::filesystem::path(dir) / filename;
+		std::filesystem::path fullpath;
+		try
+		{
+			fullpath = std::filesystem::path(dir) / filename;
+		}
+		catch (const std::exception &)
+		{
+			std::cerr << "invalid path encoding: " << filename << std::endl;
+			continue;
+		}
 		// std::ifstream ifs(fullpath);
 
-
-		// 拡張子がqjs（俺が今決めた）だったらバイトコードとして読む
-		if (fs::path(filename).extension() == ".qjs") {
-			QJSByteCodeData data;
-			std::ifstream ifs(fullpath, std::ios::binary);
-			if (!ifs)
-			{
-				std::cerr << "could not open file:" << filename << std::endl;
-				continue;
-			}
-			ifs.seekg(0, std::ios::end);
-			std::streamsize size = ifs.tellg();
-			ifs.seekg(0, std::ios::beg);
-			std::vector<uint8_t> buf(size);
-			if (size > 0) {
-				ifs.read(reinterpret_cast<char*>(buf.data()), size);
-			}
-			data.body = buf;
-			ret[filename] = data;
-
+		JsFileData data;
+		std::ifstream ifs(fullpath);
+		if (!ifs)
+		{
+			std::cerr << "could not open file:" << filename << std::endl;
+			continue;
 		}
-		else {
-			JsFileData data;
-			std::ifstream ifs(fullpath);
-			if (!ifs)
+
+		std::ostringstream buf;
+		buf << ifs.rdbuf();
+		data.body = buf.str();
+
+		// 変数設定されてたら何かいい感じにパースする
+		while (qpos != std::string::npos)
+		{
+			auto next = query.find('?', qpos + 1);
+			auto pair = query.substr(qpos + 1, next - qpos - 1);
+			auto eq = pair.find('=');
+			if (eq != std::string::npos)
 			{
-				std::cerr << "could not open file:" << filename << std::endl;
-				continue;
+				auto key = pair.substr(0, eq);
+				auto val = pair.substr(eq + 1);
+
+				data.variables[key] = val;
 			}
-
-			std::ostringstream buf;
-			buf << ifs.rdbuf();
-			data.body = buf.str();
-
-			// 変数設定されてたら何かいい感じにパースする
-			while (qpos != std::string::npos)
-			{
-				auto next = query.find('?', qpos + 1);
-				auto pair = query.substr(qpos + 1, next - qpos - 1);
-				auto eq = pair.find('=');
-				if (eq != std::string::npos)
-				{
-					auto key = pair.substr(0, eq);
-					auto val = pair.substr(eq + 1);
-
-					data.variables[key] = val;
-				}
-				qpos = next;
-			}
-			ret[filename] = data;
+			qpos = next;
 		}
+		ret[filename] = data;
 	}
 
 	return ret;
@@ -115,7 +102,7 @@ void trim_old_logs()
 {
 	std::vector<fs::directory_entry> entries;
 
-	for (const auto& entry : fs::directory_iterator(LOG_DIR))
+	for (const auto &entry : fs::directory_iterator(LOG_DIR))
 	{
 		if (entry.is_regular_file())
 		{
@@ -126,16 +113,16 @@ void trim_old_logs()
 	if (entries.size() >= MAX_LOG_FILES)
 	{
 		std::sort(entries.begin(), entries.end(),
-			[](const auto& a, const auto& b)
-			{
-				return a.last_write_time() < b.last_write_time();
-			});
+							[](const auto &a, const auto &b)
+							{
+								return a.last_write_time() < b.last_write_time();
+							});
 		fs::remove(entries.front());
 	}
 }
 
 // ログに書き込む
-void write_log(const char* message, std::string filename)
+void write_log(const char *message, std::string filename)
 {
 #ifdef NDEBUG
 	std::ofstream ofs(filename);
@@ -152,9 +139,11 @@ HANDLE job;
 HANDLE proc;
 
 // Job ObjectにPIDでプロセスを登録して、一緒に死ぬようにする
-bool assign_relationship(DWORD pid) {
+bool assign_relationship(DWORD pid)
+{
 	job = CreateJobObject(NULL, NULL);
-	if (!job) {
+	if (!job)
+	{
 		std::cerr << "CreateJobObject failed\n";
 		return false;
 	}
@@ -162,7 +151,8 @@ bool assign_relationship(DWORD pid) {
 	// 子プロセスを親と心中させる設定
 	JOBOBJECT_EXTENDED_LIMIT_INFORMATION info = {};
 	info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-	if (!SetInformationJobObject(job, JobObjectExtendedLimitInformation, &info, sizeof(info))) {
+	if (!SetInformationJobObject(job, JobObjectExtendedLimitInformation, &info, sizeof(info)))
+	{
 		std::cerr << "SetInformationJobObject failed\n";
 		CloseHandle(job);
 		return false;
@@ -170,14 +160,16 @@ bool assign_relationship(DWORD pid) {
 
 	// PID からプロセスハンドルを開く
 	proc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
-	if (!proc) {
+	if (!proc)
+	{
 		std::cerr << "OpenProcess failed for PID " << pid << "\n";
 		CloseHandle(job);
 		return false;
 	}
 
 	// Job に子プロセスを追加
-	if (!AssignProcessToJobObject(job, proc)) {
+	if (!AssignProcessToJobObject(job, proc))
+	{
 		std::cerr << "AssignProcessToJobObject failed\n";
 		CloseHandle(proc);
 		CloseHandle(job);
@@ -187,7 +179,62 @@ bool assign_relationship(DWORD pid) {
 	return true;
 }
 
-void cleanupHandle() {
+void cleanupHandle()
+{
 	CloseHandle(job);
 	CloseHandle(proc);
+}
+
+// 絶対UTF8にするマン Windowsのコンソールからの入力はUTF-8じゃないことがあるので
+std::string console_to_utf8(const std::string &input)
+{
+#ifdef _WIN32
+	if (input.empty())
+		return "";
+	UINT cp = GetConsoleCP();
+	if (cp == CP_UTF8)
+		return input;
+
+	int wide_len = MultiByteToWideChar(cp, 0, input.c_str(), -1, NULL, 0);
+	if (wide_len <= 0)
+		return input;
+	std::wstring wstr(wide_len, 0);
+	MultiByteToWideChar(cp, 0, input.c_str(), -1, wstr.data(), wide_len);
+
+	int utf8_len = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, NULL, 0, NULL, NULL);
+	if (utf8_len <= 0)
+		return input;
+	std::string utf8_str(utf8_len, 0);
+	WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, utf8_str.data(), utf8_len, NULL, NULL);
+
+	utf8_str.resize(strlen(utf8_str.c_str()));
+	return utf8_str;
+#else
+	return input;
+#endif
+}
+
+std::string ansi_to_utf8(const std::string &input)
+{
+#ifdef _WIN32
+	if (input.empty())
+		return "";
+
+	int wide_len = MultiByteToWideChar(CP_ACP, 0, input.c_str(), -1, NULL, 0);
+	if (wide_len <= 0)
+		return input;
+	std::wstring wstr(wide_len, 0);
+	MultiByteToWideChar(CP_ACP, 0, input.c_str(), -1, wstr.data(), wide_len);
+
+	int utf8_len = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, NULL, 0, NULL, NULL);
+	if (utf8_len <= 0)
+		return input;
+	std::string utf8_str(utf8_len, 0);
+	WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, utf8_str.data(), utf8_len, NULL, NULL);
+
+	utf8_str.resize(strlen(utf8_str.c_str()));
+	return utf8_str;
+#else
+	return input;
+#endif
 }
