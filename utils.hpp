@@ -38,4 +38,4 @@ void cleanupHandle();
 std::string exeDir();
 
 std::string console_to_utf8(const std::string &input);
-std::string ansi_to_utf8(const std::string &input);
+std::string utf16_to_utf8(const wchar_t *wstr);

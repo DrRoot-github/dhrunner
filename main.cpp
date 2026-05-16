@@ -182,7 +182,11 @@ static gboolean stdin_cb(GIOChannel *source, GIOCondition condition, gpointer da
 }
 
 // ------------------ main ----------------
+#ifdef _WIN32
+int wmain(int argc, wchar_t *argv[])
+#else
 int main(int argc, char *argv[])
+#endif
 {
 
 	// parse args
@@ -198,14 +202,25 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
+#ifdef _WIN32
+	std::string program_path = utf16_to_utf8(argv[1]);
+	std::string game_option = utf16_to_utf8(argv[2]);
+	for (int i = 3; i < argc; i++)
+	{
+		// script_file_name
+		// script_file_name?REPLACE_VARIABLE=VALUE
+		script_queries.emplace_back(utf16_to_utf8(argv[i]));
+	}
+#else
 	std::string program_path = argv[1];
 	std::string game_option = argv[2];
 	for (int i = 3; i < argc; i++)
 	{
 		// script_file_name
 		// script_file_name?REPLACE_VARIABLE=VALUE
-		script_queries.emplace_back(ansi_to_utf8(argv[i]));
+		script_queries.emplace_back(argv[i]);
 	}
+#endif
 
 	// setup
 	frida_init();

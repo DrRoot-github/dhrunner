@@ -214,27 +214,21 @@ std::string console_to_utf8(const std::string &input)
 #endif
 }
 
-std::string ansi_to_utf8(const std::string &input)
+std::string utf16_to_utf8(const wchar_t *wstr)
 {
 #ifdef _WIN32
-	if (input.empty())
+	if (!wstr || wcslen(wstr) == 0)
 		return "";
 
-	int wide_len = MultiByteToWideChar(CP_ACP, 0, input.c_str(), -1, NULL, 0);
-	if (wide_len <= 0)
-		return input;
-	std::wstring wstr(wide_len, 0);
-	MultiByteToWideChar(CP_ACP, 0, input.c_str(), -1, wstr.data(), wide_len);
-
-	int utf8_len = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, NULL, 0, NULL, NULL);
+	int utf8_len = WideCharToMultiByte(CP_UTF8, 0, wstr, -1, NULL, 0, NULL, NULL);
 	if (utf8_len <= 0)
-		return input;
+		return "";
 	std::string utf8_str(utf8_len, 0);
-	WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, utf8_str.data(), utf8_len, NULL, NULL);
+	WideCharToMultiByte(CP_UTF8, 0, wstr, -1, utf8_str.data(), utf8_len, NULL, NULL);
 
 	utf8_str.resize(strlen(utf8_str.c_str()));
 	return utf8_str;
 #else
-	return input;
+	return "";
 #endif
 }

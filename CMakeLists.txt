@@ -11,6 +11,8 @@ link_directories("${CMAKE_SOURCE_DIR}/frida")
 # add_executableの前にこれ挟まないとファイルをSjis読みして死ぬ
 add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
 
+add_compile_definitions(UNICODE _UNICODE)
+
 add_executable(runner main.cpp utils.cpp)
 
 # setupapiと/NODEFAULTLIBを追加しないとビルド通らない
